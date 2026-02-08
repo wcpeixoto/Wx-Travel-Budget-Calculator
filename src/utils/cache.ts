@@ -2,7 +2,7 @@ import { CACHE_TTL_MS } from './constants';
 import type { CalculationResult, TripFormState } from '../types';
 
 const memoryCache = new Map<string, { ts: number; result: CalculationResult }>();
-const STORAGE_KEY = 'wx_trip_budget_cache_v1';
+const STORAGE_KEY = 'wx_trip_budget_cache_v2';
 
 export function makeCacheKey(form: TripFormState): string {
   return JSON.stringify({
@@ -16,10 +16,7 @@ export function makeCacheKey(form: TripFormState): string {
     ln: form.lengthNights,
     a: form.adults,
     k: form.kids,
-    ap: form.includeAirportTransport,
-    i: form.includeInsurance,
-    ac: form.includeActivities,
-    lt: form.includeLocalTransport,
+    ic: form.includeCosts,
     b: form.bufferPercent,
     ov: form.overrides,
   });

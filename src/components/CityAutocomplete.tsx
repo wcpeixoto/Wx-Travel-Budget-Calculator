@@ -122,6 +122,15 @@ export default function CityAutocomplete({ label, value, onChange, showAirportHe
     );
   }
 
+  const helperAirportCode = value.resolved?.primaryIata;
+  const helperAirportName = helperAirportCode ? getAirportDisplayName(helperAirportCode) : '';
+  const helperText =
+    value.resolved?.type === 'city' && helperAirportCode
+      ? `Using ${helperAirportName} (${helperAirportCode})`
+      : value.resolved?.type === 'airport' && helperAirportCode
+        ? `Using ${helperAirportName} (${helperAirportCode})`
+        : '';
+
   return (
     <label className="field">
       <span>{label}</span>
@@ -169,11 +178,9 @@ export default function CityAutocomplete({ label, value, onChange, showAirportHe
         autoComplete="off"
       />
 
-      {showAirportHelper && value.resolved?.type === 'city' && (
+      {showAirportHelper && helperText && (
         <div className="resolved-hint">
-          <small>
-            Using {getAirportDisplayName(value.resolved.primaryIata)} ({value.resolved.primaryIata})
-          </small>
+          <small>{helperText}</small>
           <button
             type="button"
             className="link-btn"

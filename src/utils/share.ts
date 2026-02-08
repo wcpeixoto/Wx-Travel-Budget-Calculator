@@ -60,6 +60,23 @@ function normalizeLocationInput(input: unknown): LocationInputState {
   };
 }
 
+function normalizeIncludeCosts(input: unknown): TripFormState['includeCosts'] {
+  const defaults = DEFAULT_FORM_STATE.includeCosts;
+  if (!input || typeof input !== 'object') return defaults;
+  const candidate = input as Partial<TripFormState['includeCosts']>;
+  const legacy = input as { gettingAround?: boolean };
+  return {
+    airportAccess: candidate.airportAccess ?? defaults.airportAccess,
+    baggageFees: candidate.baggageFees ?? defaults.baggageFees,
+    lodging: candidate.lodging ?? defaults.lodging,
+    rideshareTaxi: candidate.rideshareTaxi ?? legacy.gettingAround ?? defaults.rideshareTaxi,
+    rentalCar: candidate.rentalCar ?? false,
+    meals: candidate.meals ?? defaults.meals,
+    activities: candidate.activities ?? defaults.activities,
+    travelInsurance: candidate.travelInsurance ?? defaults.travelInsurance,
+  };
+}
+
 export function encodeFormToUrl(form: TripFormState): string {
   const url = new URL(window.location.href);
   url.searchParams.set('trip', btoa(JSON.stringify(form)));
@@ -77,6 +94,11 @@ export function decodeFormFromUrl(): TripFormState | null {
       destinationCode?: string;
       origin?: unknown;
       destination?: unknown;
+      includeAirportTransport?: boolean;
+      includeInsurance?: boolean;
+      includeActivities?: boolean;
+      includeLocalTransport?: boolean;
+      includeCosts?: unknown;
     };
 
     const origin = normalizeLocationInput(parsed.origin);
@@ -112,11 +134,26 @@ export function decodeFormFromUrl(): TripFormState | null {
       destination.displayText = destination.displayText || parsed.destinationCode;
     }
 
+    const includeCosts =
+      parsed.includeCosts && typeof parsed.includeCosts === 'object'
+        ? normalizeIncludeCosts(parsed.includeCosts)
+        : {
+            airportAccess: parsed.includeAirportTransport ?? DEFAULT_FORM_STATE.includeCosts.airportAccess,
+            baggageFees: DEFAULT_FORM_STATE.includeCosts.baggageFees,
+            lodging: DEFAULT_FORM_STATE.includeCosts.lodging,
+            rideshareTaxi: parsed.includeLocalTransport ?? DEFAULT_FORM_STATE.includeCosts.rideshareTaxi,
+            rentalCar: false,
+            meals: DEFAULT_FORM_STATE.includeCosts.meals,
+            activities: parsed.includeActivities ?? DEFAULT_FORM_STATE.includeCosts.activities,
+            travelInsurance: parsed.includeInsurance ?? DEFAULT_FORM_STATE.includeCosts.travelInsurance,
+          };
+
     return {
       ...DEFAULT_FORM_STATE,
       ...parsed,
       origin,
       destination,
+      includeCosts,
       overrides: {
         ...DEFAULT_FORM_STATE.overrides,
         ...parsed.overrides,
@@ -150,10 +187,7 @@ export async function copyPriceWatchConfig(form: TripFormState): Promise<string>
         kids: form.kids,
       },
       features: {
-        airportTransport: form.includeAirportTransport,
-        insurance: form.includeInsurance,
-        activities: form.includeActivities,
-        localTransport: form.includeLocalTransport,
+        includeCosts: form.includeCosts,
       },
     },
   };

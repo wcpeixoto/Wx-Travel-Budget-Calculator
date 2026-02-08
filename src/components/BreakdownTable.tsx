@@ -6,13 +6,13 @@ type Props = {
 };
 
 const ROWS: Array<{ key: keyof CalculationResult['breakdown']; label: string }> = [
-  { key: 'homeAirport', label: 'Home ↔ airport' },
+  { key: 'homeAirport', label: 'Getting to the airport' },
   { key: 'flights', label: 'Flights' },
   { key: 'roadTripTransport', label: 'Road trip transport' },
   { key: 'baggageFees', label: 'Baggage fees' },
   { key: 'lodging', label: 'Lodging' },
-  { key: 'localTransportation', label: 'Local transportation' },
-  { key: 'food', label: 'Food + airport food' },
+  { key: 'localTransportation', label: 'Getting around' },
+  { key: 'food', label: 'Meals' },
   { key: 'activities', label: 'Activities' },
   { key: 'miscFees', label: 'Misc fees / charges' },
   { key: 'insurance', label: 'Travel insurance' },

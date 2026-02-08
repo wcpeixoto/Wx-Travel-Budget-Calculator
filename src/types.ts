@@ -18,6 +18,27 @@ export type LocationInputState = {
   resolved: ResolvedLocation | null;
 };
 
+export type IncludeCosts = {
+  airportAccess: boolean;
+  baggageFees: boolean;
+  lodging: boolean;
+  rideshareTaxi: boolean;
+  rentalCar: boolean;
+  meals: boolean;
+  activities: boolean;
+  travelInsurance: boolean;
+};
+
+export type IncludeCategoryTotals = Record<keyof IncludeCosts, number | null>;
+
+export type MealsPreferenceEstimate = {
+  eatingOutPercent: number;
+  cookingInPercent: number;
+  eatingOutTotal: number | null;
+  cookingInTotal: number | null;
+  total: number | null;
+};
+
 export type TripFormState = {
   origin: LocationInputState;
   destination: LocationInputState;
@@ -29,10 +50,8 @@ export type TripFormState = {
   lengthNights: number;
   adults: number;
   kids: number;
-  includeAirportTransport: boolean;
-  includeInsurance: boolean;
-  includeActivities: boolean;
-  includeLocalTransport: boolean;
+  mealsPreference: number;
+  includeCosts: IncludeCosts;
   bufferPercent: number;
   overrides: AdvancedOverrides;
 };
@@ -102,6 +121,22 @@ export type CalculationResult = {
   hotelsUrl: string;
   carRentalsUrl: string;
   generatedAt: string;
+  estimates: {
+    flight: FlightEstimate;
+    lodging: LodgingEstimate;
+  };
+};
+
+export type LiveEstimateSnapshot = {
+  flight: FlightEstimate;
+  lodging: LodgingEstimate;
+};
+
+export type LiveEstimateBasis = {
+  adults: number;
+  kids: number;
+  days: number;
+  nights: number;
 };
 
 export type FlightEstimate = {
@@ -126,6 +161,7 @@ export type FlightQuery = {
   kids: number;
   lengthMode: boolean;
   lengthDays: number;
+  distanceMiles?: number;
 };
 
 export type LodgingQuery = {

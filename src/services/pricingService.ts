@@ -2,8 +2,12 @@ import type {
   CalculationResult,
   FlightEstimate,
   FlightQuery,
+  IncludeCategoryTotals,
+  LiveEstimateBasis,
+  LiveEstimateSnapshot,
   LodgingEstimate,
   LodgingQuery,
+  MealsPreferenceEstimate,
   PriceSource,
   TripFormState,
 } from '../types';
@@ -38,6 +42,12 @@ const HOTEL_NIGHTLY_BY_TIER = {
   premium: 285,
 };
 
+const MEAL_RATE_BY_TIER = {
+  budget: { eatOutAdult: 42, cookInAdult: 20 },
+  mid: { eatOutAdult: 58, cookInAdult: 26 },
+  premium: { eatOutAdult: 82, cookInAdult: 34 },
+};
+
 type AmadeusTokenResponse = {
   access_token: string;
 };
@@ -59,6 +69,51 @@ function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number):
 
 function safeTier(code: string): 'budget' | 'mid' | 'premium' {
   return DESTINATION_TIER[code] ?? 'mid';
+}
+
+function estimateMealsTotal(form: TripFormState, days: number): number {
+  return computeMealsComponents(form, days).total;
+}
+
+function computeMealsComponents(form: TripFormState, days: number): { eatingOutTotal: number; cookingInTotal: number; total: number } {
+  const tier = safeTier(form.destination.resolved?.primaryIata ?? '');
+  const rates = MEAL_RATE_BY_TIER[tier];
+  const travelers = form.adults + form.kids;
+  const cookingInShare = Math.min(1, Math.max(0, form.mealsPreference / 100));
+  const eatingOutShare = 1 - cookingInShare;
+  const eatOutPerDay = rates.eatOutAdult * travelers;
+  const cookInPerDay = rates.cookInAdult;
+  const eatingOutTotal = eatOutPerDay * days * eatingOutShare;
+  const cookingInTotal = cookInPerDay * days * cookingInShare;
+  return {
+    eatingOutTotal,
+    cookingInTotal,
+    total: eatingOutTotal + cookingInTotal,
+  };
+}
+
+export function estimateMealsPreference(form: TripFormState): MealsPreferenceEstimate {
+  const cookingInPercent = Math.min(100, Math.max(0, Math.round(form.mealsPreference)));
+  const eatingOutPercent = 100 - cookingInPercent;
+  const duration = getTripDuration(form);
+  if (!duration) {
+    return {
+      eatingOutPercent,
+      cookingInPercent,
+      eatingOutTotal: null,
+      cookingInTotal: null,
+      total: null,
+    };
+  }
+
+  const totals = computeMealsComponents(form, duration.days);
+  return {
+    eatingOutPercent,
+    cookingInPercent,
+    eatingOutTotal: totals.eatingOutTotal,
+    cookingInTotal: totals.cookingInTotal,
+    total: totals.total,
+  };
 }
 
 function buildGoogleFlightsUrl(form: TripFormState, departDate: string, returnDate: string): string {
@@ -293,9 +348,28 @@ function heuristicFlight(query: FlightQuery): FlightEstimate {
   const tier = safeTier(query.destinationCode);
   const tripFactor = query.lengthDays >= 10 ? 1.08 : query.lengthDays <= 4 ? 0.92 : 1;
   const seasonalFactor = 1 + ((new Date().getMonth() % 6) - 2) * 0.03;
-  const base = FLIGHT_BASE_BY_TIER[tier] * tripFactor * seasonalFactor;
-  const totalAdultFare = base * query.adults;
-  const totalKidFare = base * 0.74 * query.kids;
+  const adultFloor =
+    query.distanceMiles && query.distanceMiles >= 4500
+      ? 1200
+      : query.distanceMiles && query.distanceMiles >= 3500
+        ? 950
+        : query.distanceMiles && query.distanceMiles >= 2500
+          ? 750
+          : 0;
+  const distanceFactor =
+    query.distanceMiles && query.distanceMiles >= 4500
+      ? 1.62
+      : query.distanceMiles && query.distanceMiles >= 3500
+        ? 1.45
+        : query.distanceMiles && query.distanceMiles >= 2500
+          ? 1.3
+          : query.distanceMiles && query.distanceMiles >= 1500
+        ? 1.14
+            : 1;
+  const base = FLIGHT_BASE_BY_TIER[tier] * tripFactor * seasonalFactor * distanceFactor;
+  const adultBase = Math.max(base, adultFloor);
+  const totalAdultFare = adultBase * query.adults;
+  const totalKidFare = adultBase * 0.74 * query.kids;
   const totalFare = totalAdultFare + totalKidFare;
 
   return {
@@ -305,7 +379,37 @@ function heuristicFlight(query: FlightQuery): FlightEstimate {
     source: {
       name: 'Smart Estimate Model',
       type: 'heuristic',
-      detail: 'Route tier baseline + seasonality + traveler mix',
+      detail: 'Route tier baseline + distance band + seasonality + traveler mix',
+      updatedAt: nowIso(),
+    },
+  };
+}
+
+function withFlightSanityFloor(estimate: FlightEstimate, query: FlightQuery): FlightEstimate {
+  const adultFloor =
+    query.distanceMiles && query.distanceMiles >= 4500
+      ? 1200
+      : query.distanceMiles && query.distanceMiles >= 3500
+        ? 950
+        : query.distanceMiles && query.distanceMiles >= 2500
+          ? 750
+          : 0;
+  if (!adultFloor) return estimate;
+
+  const travelerWeight = query.adults + query.kids * 0.74;
+  const perWeightedTraveler = estimate.totalFare / Math.max(1, travelerWeight);
+  if (perWeightedTraveler >= adultFloor * 0.9) return estimate;
+
+  const totalAdultFare = adultFloor * query.adults;
+  const totalKidFare = adultFloor * 0.74 * query.kids;
+  return {
+    ...estimate,
+    totalAdultFare,
+    totalKidFare,
+    totalFare: totalAdultFare + totalKidFare,
+    source: {
+      ...estimate.source,
+      detail: `${estimate.source.detail}; adjusted with route-distance sanity floor`,
       updatedAt: nowIso(),
     },
   };
@@ -329,12 +433,12 @@ function heuristicLodging(query: LodgingQuery): LodgingEstimate {
 
 export async function getFlightEstimate(query: FlightQuery): Promise<FlightEstimate> {
   const proxy = await fetchProxyFlight(query);
-  if (proxy && proxy.totalFare > 0) return proxy;
+  if (proxy && proxy.totalFare > 0) return withFlightSanityFloor(proxy, query);
 
   const amadeus = await fetchAmadeusFlight(query);
-  if (amadeus && amadeus.totalFare > 0) return amadeus;
+  if (amadeus && amadeus.totalFare > 0) return withFlightSanityFloor(amadeus, query);
 
-  return heuristicFlight(query);
+  return withFlightSanityFloor(heuristicFlight(query), query);
 }
 
 export async function getLodgingEstimate(query: LodgingQuery): Promise<LodgingEstimate> {
@@ -366,6 +470,10 @@ function buildAssumptions(form: TripFormState, flightSource: PriceSource, lodgin
     `Trip type: ${form.tripType === 'road_trip' ? 'Road trip' : 'Flight'}.`,
     `Adults: ${form.adults}, kids: ${form.kids} (kids meal/activity discounts applied).`,
     `Resolved route: ${form.origin.resolved?.primaryIata ?? '-'} -> ${form.destination.resolved?.primaryIata ?? '-'}.`,
+    `Included costs: ${Object.entries(form.includeCosts)
+      .filter(([, enabled]) => enabled)
+      .map(([key]) => key)
+      .join(', ')}.`,
     `Flight source: ${flightSource.name} (${flightSource.type}).`,
     `Lodging source: ${lodgingSource.name} (${lodgingSource.type}).`,
     manualOverrides.length ? `Manual cost overrides active for ${manualOverrides.join(', ')}.` : 'No manual category overrides applied.',
@@ -377,54 +485,151 @@ function buildAssumptions(form: TripFormState, flightSource: PriceSource, lodgin
   ];
 }
 
-export async function calculateTripBudget(form: TripFormState): Promise<CalculationResult> {
-  const originCode = form.origin.resolved?.primaryIata;
-  const destinationCode = form.destination.resolved?.primaryIata;
-  if (!originCode || !destinationCode) {
-    throw new Error('Missing resolved airport codes');
+function getTripDuration(form: TripFormState): { days: number; nights: number } | null {
+  if (form.durationMode === 'exact') {
+    if (!form.departDate || !form.returnDate) return null;
+    const dep = new Date(`${form.departDate}T00:00:00`);
+    const ret = new Date(`${form.returnDate}T00:00:00`);
+    if (Number.isNaN(dep.getTime()) || Number.isNaN(ret.getTime()) || ret <= dep) return null;
+    const days = daysBetween(form.departDate, form.returnDate);
+    return { days, nights: Math.max(1, days) };
   }
 
-  const days = form.durationMode === 'exact' ? daysBetween(form.departDate, form.returnDate) : form.lengthDays;
-  const nights = form.durationMode === 'exact' ? Math.max(1, days) : Math.max(1, form.lengthNights);
+  if (!form.lengthDays || form.lengthDays <= 0) return null;
+  return {
+    days: form.lengthDays,
+    nights: Math.max(1, form.lengthNights),
+  };
+}
 
-  const dep = form.durationMode === 'exact' ? form.departDate : getNextMonthDate(1, 10);
-  const ret = form.durationMode === 'exact' ? form.returnDate : addDays(dep, days);
+export function estimateIncludeCategoryTotals(form: TripFormState): IncludeCategoryTotals {
+  const duration = getTripDuration(form);
+  if (!duration) {
+    return {
+      airportAccess: null,
+      baggageFees: null,
+      lodging: null,
+      rideshareTaxi: null,
+      rentalCar: null,
+      meals: null,
+      activities: null,
+      travelInsurance: null,
+    };
+  }
 
-  const lodgingPromise = getLodgingEstimate({
-    destinationCode,
-    checkIn: dep,
-    checkOut: ret,
-    adults: form.adults,
-    kids: form.kids,
-    nights,
-  });
+  const { days, nights } = duration;
+  const travelers = form.adults + form.kids;
+  const manual = form.overrides;
 
-  const flightPromise =
-    form.tripType === 'flight'
-      ? getFlightEstimate({
+  const airportAccess = form.tripType === 'road_trip' ? 0 : (manual.homeAirportTotalOverride ?? 130 + travelers * 18);
+  const baggageFees =
+    form.tripType === 'road_trip' ? 0 : (manual.baggageTotalOverride ?? manual.baggageFeePerTraveler * travelers);
+  const rideshareTaxi = manual.localTransportTotalOverride ?? nights * 28 + travelers * 18;
+  const rentalCar = manual.localTransportTotalOverride ?? nights * 52 + travelers * 16;
+  const meals = manual.foodTotalOverride ?? estimateMealsTotal(form, days);
+  const activities =
+    manual.activitiesTotalOverride ??
+    days * (form.adults * manual.activitiesAdultPerDay + form.kids * manual.activitiesKidPerDay);
+
+  const destinationCode = form.destination.resolved?.primaryIata;
+  const lodging =
+    manual.lodgingTotalOverride ?? (destinationCode
+      ? heuristicLodging({
+          destinationCode,
+          checkIn: '',
+          checkOut: '',
+          adults: form.adults,
+          kids: form.kids,
+          nights,
+        }).totalStayCost
+      : null);
+
+  const originCode = form.origin.resolved?.primaryIata;
+  const hasGeo =
+    Boolean(form.origin.resolved?.lat) &&
+    Boolean(form.origin.resolved?.lon) &&
+    Boolean(form.destination.resolved?.lat) &&
+    Boolean(form.destination.resolved?.lon);
+  const roadDistanceAuto = hasGeo
+    ? haversineMiles(
+        form.origin.resolved?.lat ?? 0,
+        form.origin.resolved?.lon ?? 0,
+        form.destination.resolved?.lat ?? 0,
+        form.destination.resolved?.lon ?? 0,
+      ) *
+      2 *
+      1.22
+    : 600;
+  const roadDistanceMiles = manual.roadTripDistanceMiles ?? roadDistanceAuto;
+  const fuelCost = (roadDistanceMiles / Math.max(1, manual.roadTripMpg)) * Math.max(0, manual.roadTripGasPricePerGallon);
+  const wearCost = roadDistanceMiles * Math.max(0, manual.roadTripWearPerMile);
+  const roadTripTransport = manual.flightsTotalOverride ?? (fuelCost + wearCost + Math.max(0, manual.roadTripTollsAndParking));
+  const flightTransport =
+    manual.flightsTotalOverride ?? (originCode && destinationCode
+      ? heuristicFlight({
           originCode,
           destinationCode,
-          departDate: dep,
-          returnDate: ret,
+          departDate: '',
+          returnDate: '',
           adults: form.adults,
           kids: form.kids,
           lengthMode: form.durationMode === 'length',
           lengthDays: days,
-        })
-      : Promise.resolve<FlightEstimate>({
-          totalAdultFare: 0,
-          totalKidFare: 0,
-          totalFare: 0,
-          source: {
-            name: 'Road Trip Cost Model',
-            type: 'heuristic',
-            detail: 'Fuel + wear + tolls/parking estimate from overrides and route distance',
-            updatedAt: nowIso(),
-          },
-        });
+          distanceMiles: hasGeo
+            ? haversineMiles(
+                form.origin.resolved?.lat ?? 0,
+                form.origin.resolved?.lon ?? 0,
+                form.destination.resolved?.lat ?? 0,
+                form.destination.resolved?.lon ?? 0,
+              )
+            : undefined,
+        }).totalFare
+      : null);
+  const requiredTransport = form.tripType === 'road_trip' ? roadTripTransport : flightTransport;
+  const miscFees = manual.miscFeesTotalOverride ?? (manual.miscFeesFlat + nights * 12);
 
-  const [flight, lodging] = await Promise.all([flightPromise, lodgingPromise]);
+  const categoryTotals: IncludeCategoryTotals = {
+    airportAccess,
+    baggageFees,
+    lodging,
+    rideshareTaxi,
+    rentalCar,
+    meals,
+    activities,
+    travelInsurance: null,
+  };
 
+  const missingIncludedCategory = (Object.entries(form.includeCosts) as Array<[keyof TripFormState['includeCosts'], boolean]>)
+    .some(([key, enabled]) => enabled && key !== 'travelInsurance' && categoryTotals[key] === null);
+  const missingTransport = requiredTransport === null;
+  if (manual.insuranceTotalOverride !== null) {
+    categoryTotals.travelInsurance = manual.insuranceTotalOverride;
+  } else if (!missingIncludedCategory && !missingTransport) {
+    const subtotalNoInsurance =
+      (requiredTransport ?? 0) +
+      miscFees +
+      (form.includeCosts.airportAccess ? (categoryTotals.airportAccess ?? 0) : 0) +
+      (form.includeCosts.baggageFees ? (categoryTotals.baggageFees ?? 0) : 0) +
+      (form.includeCosts.lodging ? (categoryTotals.lodging ?? 0) : 0) +
+      (form.includeCosts.rideshareTaxi ? (categoryTotals.rideshareTaxi ?? 0) : 0) +
+      (form.includeCosts.rentalCar ? (categoryTotals.rentalCar ?? 0) : 0) +
+      (form.includeCosts.meals ? (categoryTotals.meals ?? 0) : 0) +
+      (form.includeCosts.activities ? (categoryTotals.activities ?? 0) : 0);
+    categoryTotals.travelInsurance = subtotalNoInsurance * (manual.insurancePercent / 100);
+  }
+
+  return categoryTotals;
+}
+
+function buildBudgetFromEstimates(
+  form: TripFormState,
+  flight: FlightEstimate,
+  lodging: LodgingEstimate,
+  days: number,
+  nights: number,
+  dep: string,
+  ret: string,
+): CalculationResult {
   const manual = form.overrides;
   const travelers = form.adults + form.kids;
   const hasGeo =
@@ -448,20 +653,20 @@ export async function calculateTripBudget(form: TripFormState): Promise<Calculat
   const roadTripTransportAuto = fuelCost + wearCost + Math.max(0, manual.roadTripTollsAndParking);
 
   const airportTransportAuto =
-    form.tripType === 'road_trip' ? 0 : form.includeAirportTransport ? 130 + travelers * 18 : 0;
-  const baggageFeesAuto = form.tripType === 'road_trip' ? 0 : form.overrides.baggageFeePerTraveler * travelers;
-  const localTransportAuto = form.includeLocalTransport ? nights * 45 + travelers * 20 : 0;
-  const foodDaily = form.adults * form.overrides.mealAdultPerDay + form.kids * form.overrides.mealKidPerDay;
-  const airportFood =
-    form.tripType === 'road_trip' ? 0 : travelers * form.overrides.airportFoodPerTravelerTravelDay * 2;
-  const food = foodDaily * days + airportFood;
-  const activitiesAuto = form.includeActivities
+    form.tripType === 'road_trip' ? 0 : form.includeCosts.airportAccess ? 130 + travelers * 18 : 0;
+  const baggageFeesAuto =
+    form.tripType === 'road_trip' || !form.includeCosts.baggageFees ? 0 : form.overrides.baggageFeePerTraveler * travelers;
+  const rideshareTaxiAuto = form.includeCosts.rideshareTaxi ? nights * 28 + travelers * 18 : 0;
+  const rentalCarAuto = form.includeCosts.rentalCar ? nights * 52 + travelers * 16 : 0;
+  const localTransportAuto = rideshareTaxiAuto + rentalCarAuto;
+  const food = form.includeCosts.meals ? estimateMealsTotal(form, days) : 0;
+  const activitiesAuto = form.includeCosts.activities
     ? days *
       (form.adults * form.overrides.activitiesAdultPerDay +
         form.kids * form.overrides.activitiesKidPerDay)
     : 0;
   const miscFeesAuto = form.overrides.miscFeesFlat + nights * 12;
-  const lodgingAuto = lodging.totalStayCost;
+  const lodgingAuto = form.includeCosts.lodging ? lodging.totalStayCost : 0;
 
   const airportTransport = manual.homeAirportTotalOverride ?? airportTransportAuto;
   const flightsTotal =
@@ -490,7 +695,7 @@ export async function calculateTripBudget(form: TripFormState): Promise<Calculat
     activities +
     miscFees;
 
-  const insuranceAuto = form.includeInsurance ? subtotalNoInsurance * (form.overrides.insurancePercent / 100) : 0;
+  const insuranceAuto = form.includeCosts.travelInsurance ? subtotalNoInsurance * (form.overrides.insurancePercent / 100) : 0;
   const insurance = manual.insuranceTotalOverride ?? insuranceAuto;
   const subtotal = subtotalNoInsurance + insurance;
   const buffer = subtotal * (form.bufferPercent / 100);
@@ -529,5 +734,220 @@ export async function calculateTripBudget(form: TripFormState): Promise<Calculat
     hotelsUrl: buildHotelsUrl(form, dep, ret),
     carRentalsUrl: buildCarRentalsUrl(form, dep, ret),
     generatedAt: nowIso(),
+    estimates: {
+      flight,
+      lodging,
+    },
   };
+}
+
+function derivedFlightEstimate(
+  form: TripFormState,
+  days: number,
+  snapshot?: LiveEstimateSnapshot,
+  basis?: LiveEstimateBasis,
+): FlightEstimate {
+  const distanceMiles =
+    form.origin.resolved && form.destination.resolved
+      ? haversineMiles(
+          form.origin.resolved.lat,
+          form.origin.resolved.lon,
+          form.destination.resolved.lat,
+          form.destination.resolved.lon,
+        )
+      : undefined;
+  const queryForFloor: FlightQuery = {
+    originCode: form.origin.resolved?.primaryIata ?? '',
+    destinationCode: form.destination.resolved?.primaryIata ?? '',
+    departDate: '',
+    returnDate: '',
+    adults: form.adults,
+    kids: form.kids,
+    lengthMode: form.durationMode === 'length',
+    lengthDays: days,
+    distanceMiles,
+  };
+
+  if (snapshot?.flight) {
+    if (basis) {
+      const adultUnit = basis.adults > 0 ? snapshot.flight.totalAdultFare / basis.adults : 0;
+      const kidFallbackUnit = adultUnit * 0.74;
+      const kidUnit = basis.kids > 0 ? snapshot.flight.totalKidFare / basis.kids : kidFallbackUnit;
+      const totalAdultFare = adultUnit * form.adults;
+      const totalKidFare = kidUnit * form.kids;
+      return withFlightSanityFloor({
+        totalAdultFare,
+        totalKidFare,
+        totalFare: totalAdultFare + totalKidFare,
+        source: {
+          ...snapshot.flight.source,
+          type: 'heuristic',
+          detail: 'Derived from last fetched pricing (scaled per traveler)',
+          updatedAt: nowIso(),
+        },
+      }, queryForFloor);
+    }
+
+    return withFlightSanityFloor({
+      ...snapshot.flight,
+      source: {
+        ...snapshot.flight.source,
+        type: 'heuristic',
+        detail: 'Derived from last fetched pricing',
+        updatedAt: nowIso(),
+      },
+    }, queryForFloor);
+  }
+
+  const originCode = form.origin.resolved?.primaryIata;
+  const destinationCode = form.destination.resolved?.primaryIata;
+  if (!originCode || !destinationCode) {
+    return {
+      totalAdultFare: 0,
+      totalKidFare: 0,
+      totalFare: 0,
+      source: {
+        name: 'Smart Estimate Model',
+        type: 'heuristic',
+        detail: 'Waiting for route selection',
+        updatedAt: nowIso(),
+      },
+    };
+  }
+
+  return withFlightSanityFloor(heuristicFlight({
+    originCode,
+    destinationCode,
+    departDate: '',
+    returnDate: '',
+    adults: form.adults,
+    kids: form.kids,
+    lengthMode: form.durationMode === 'length',
+    lengthDays: days,
+    distanceMiles,
+  }), queryForFloor);
+}
+
+function derivedLodgingEstimate(form: TripFormState, nights: number, snapshot?: LiveEstimateSnapshot): LodgingEstimate {
+  if (snapshot?.lodging) {
+    return {
+      ...snapshot.lodging,
+      source: {
+        ...snapshot.lodging.source,
+        type: 'heuristic',
+        detail: 'Derived from last fetched pricing',
+        updatedAt: nowIso(),
+      },
+    };
+  }
+
+  const destinationCode = form.destination.resolved?.primaryIata;
+  if (!destinationCode) {
+    return {
+      nightlyRate: 0,
+      totalStayCost: 0,
+      source: {
+        name: 'Smart Estimate Model',
+        type: 'heuristic',
+        detail: 'Waiting for destination selection',
+        updatedAt: nowIso(),
+      },
+    };
+  }
+
+  return heuristicLodging({
+    destinationCode,
+    checkIn: '',
+    checkOut: '',
+    adults: form.adults,
+    kids: form.kids,
+    nights,
+  });
+}
+
+export function calculateTripBudgetDerived(
+  form: TripFormState,
+  snapshot?: LiveEstimateSnapshot,
+  basis?: LiveEstimateBasis,
+): CalculationResult {
+  const days = form.durationMode === 'exact' ? daysBetween(form.departDate, form.returnDate) : form.lengthDays;
+  const nights = form.durationMode === 'exact' ? Math.max(1, days) : Math.max(1, form.lengthNights);
+  const dep = form.durationMode === 'exact' ? form.departDate : getNextMonthDate(1, 10);
+  const ret = form.durationMode === 'exact' ? form.returnDate : addDays(dep, days);
+  const flight: FlightEstimate =
+    form.tripType === 'flight'
+      ? derivedFlightEstimate(form, days, snapshot, basis)
+      : {
+          totalAdultFare: 0,
+          totalKidFare: 0,
+          totalFare: 0,
+          source: {
+            name: 'Road Trip Cost Model',
+            type: 'heuristic',
+            detail: 'Fuel + wear + tolls/parking estimate from overrides and route distance',
+            updatedAt: nowIso(),
+          },
+        };
+  const lodging = derivedLodgingEstimate(form, nights, snapshot);
+
+  return buildBudgetFromEstimates(form, flight, lodging, days, nights, dep, ret);
+}
+
+export async function calculateTripBudget(form: TripFormState): Promise<CalculationResult> {
+  const originCode = form.origin.resolved?.primaryIata;
+  const destinationCode = form.destination.resolved?.primaryIata;
+  if (!originCode || !destinationCode) {
+    throw new Error('Missing resolved airport codes');
+  }
+
+  const days = form.durationMode === 'exact' ? daysBetween(form.departDate, form.returnDate) : form.lengthDays;
+  const nights = form.durationMode === 'exact' ? Math.max(1, days) : Math.max(1, form.lengthNights);
+
+  const dep = form.durationMode === 'exact' ? form.departDate : getNextMonthDate(1, 10);
+  const ret = form.durationMode === 'exact' ? form.returnDate : addDays(dep, days);
+
+  const lodgingPromise = getLodgingEstimate({
+    destinationCode,
+    checkIn: dep,
+    checkOut: ret,
+    adults: form.adults,
+    kids: form.kids,
+    nights,
+  });
+
+  const flightPromise =
+    form.tripType === 'flight'
+      ? getFlightEstimate({
+          originCode,
+          destinationCode,
+          departDate: dep,
+          returnDate: ret,
+          adults: form.adults,
+          kids: form.kids,
+          lengthMode: form.durationMode === 'length',
+          lengthDays: days,
+          distanceMiles:
+            form.origin.resolved && form.destination.resolved
+              ? haversineMiles(
+                  form.origin.resolved.lat,
+                  form.origin.resolved.lon,
+                  form.destination.resolved.lat,
+                  form.destination.resolved.lon,
+                )
+              : undefined,
+        })
+      : Promise.resolve<FlightEstimate>({
+          totalAdultFare: 0,
+          totalKidFare: 0,
+          totalFare: 0,
+          source: {
+            name: 'Road Trip Cost Model',
+            type: 'heuristic',
+            detail: 'Fuel + wear + tolls/parking estimate from overrides and route distance',
+            updatedAt: nowIso(),
+          },
+        });
+
+  const [flight, lodging] = await Promise.all([flightPromise, lodgingPromise]);
+  return buildBudgetFromEstimates(form, flight, lodging, days, nights, dep, ret);
 }

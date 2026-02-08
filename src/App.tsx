@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import AdvancedOverrides from './components/AdvancedOverrides';
 import BreakdownTable from './components/BreakdownTable';
 import HeroForm from './components/HeroForm';
@@ -6,8 +6,13 @@ import PriceSourcesPanel from './components/PriceSourcesPanel';
 import ResultsSummary from './components/ResultsSummary';
 import SkeletonResults from './components/SkeletonResults';
 import { resolveLocationInput, runResolverDevChecks } from './services/locationService';
-import { calculateTripBudget } from './services/pricingService';
-import type { CalculationResult, TripFormState } from './types';
+import {
+  calculateTripBudget,
+  calculateTripBudgetDerived,
+  estimateIncludeCategoryTotals,
+  estimateMealsPreference,
+} from './services/pricingService';
+import type { CalculationResult, LiveEstimateBasis, LiveEstimateSnapshot, MealsPreferenceEstimate, TripFormState } from './types';
 import { getCachedResult, makeCacheKey, setCachedResult } from './utils/cache';
 import { DEFAULT_FORM_STATE } from './utils/constants';
 import { exportResultCsv } from './utils/csv';
@@ -15,11 +20,28 @@ import { daysBetween } from './utils/date';
 import { copyShareLink, decodeFormFromUrl } from './utils/share';
 
 export default function App() {
+  function getLiveSignature(value: TripFormState): string {
+    return JSON.stringify({
+      origin: value.origin.resolved?.primaryIata || value.origin.displayText.trim(),
+      destination: value.destination.resolved?.primaryIata || value.destination.displayText.trim(),
+      tripType: value.tripType,
+      durationMode: value.durationMode,
+      departDate: value.departDate,
+      returnDate: value.returnDate,
+      lengthDays: value.lengthDays,
+      lengthNights: value.lengthNights,
+    });
+  }
+
   const [form, setForm] = useState<TripFormState>(DEFAULT_FORM_STATE);
   const [result, setResult] = useState<CalculationResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
+  const [hasManualCalculation, setHasManualCalculation] = useState(false);
+  const [liveSnapshot, setLiveSnapshot] = useState<LiveEstimateSnapshot | null>(null);
+  const [liveSnapshotBasis, setLiveSnapshotBasis] = useState<LiveEstimateBasis | null>(null);
+  const [lastLiveSignature, setLastLiveSignature] = useState('');
   const [locationErrors, setLocationErrors] = useState<{ origin: string; destination: string }>({
     origin: '',
     destination: '',
@@ -27,6 +49,10 @@ export default function App() {
   const selectionReady = Boolean(form.origin.resolved?.primaryIata) && Boolean(form.destination.resolved?.primaryIata);
   const hasTypedLocations = Boolean(form.origin.displayText.trim()) && Boolean(form.destination.displayText.trim());
   const canCalculate = hasTypedLocations && !locationErrors.origin && !locationErrors.destination;
+  const categoryTotals = useMemo(() => estimateIncludeCategoryTotals(form), [form]);
+  const mealsPreferenceEstimate: MealsPreferenceEstimate = useMemo(() => estimateMealsPreference(form), [form]);
+
+  const currentLiveSignature = useMemo(() => getLiveSignature(form), [form]);
 
   useEffect(() => {
     const fromUrl = decodeFormFromUrl();
@@ -48,7 +74,34 @@ export default function App() {
     }
   }, [form.durationMode, form.departDate, form.returnDate, form.lengthDays, form.lengthNights]);
 
-  async function runCalculation(forceRefresh = false, sourceForm?: TripFormState) {
+  function applyDerivedCalculation(nextForm: TripFormState) {
+    const useSnapshot = hasManualCalculation && liveSnapshot && liveSnapshotBasis && currentLiveSignature === lastLiveSignature;
+    const derived = calculateTripBudgetDerived(
+      nextForm,
+      useSnapshot ? liveSnapshot : undefined,
+      useSnapshot ? liveSnapshotBasis : undefined,
+    );
+    setResult(derived);
+    setStatus(
+      useSnapshot
+        ? 'Updated from your latest settings.'
+        : 'Updated estimate. Click Calculate trip cost to refresh live prices.',
+    );
+  }
+
+  useEffect(() => {
+    if (!hasManualCalculation || loading) return;
+    if (form.adults + form.kids <= 0) return;
+    if (!form.origin.displayText.trim() || !form.destination.displayText.trim()) return;
+
+    const timeout = setTimeout(() => {
+      applyDerivedCalculation(form);
+    }, 220);
+
+    return () => clearTimeout(timeout);
+  }, [form, hasManualCalculation, loading, liveSnapshot, liveSnapshotBasis, lastLiveSignature, currentLiveSignature]);
+
+  async function runCalculation(forceRefresh = false, sourceForm?: TripFormState, mode: 'manual' | 'auto' = 'manual') {
     let activeForm = sourceForm ?? form;
     const nextLocationErrors = { origin: '', destination: '' };
 
@@ -104,13 +157,30 @@ export default function App() {
 
     setLoading(true);
     setError('');
-    setStatus('');
+    if (mode === 'manual') {
+      setStatus('');
+    }
+
+    if (mode === 'auto') {
+      applyDerivedCalculation(activeForm);
+      setLoading(false);
+      return;
+    }
 
     const key = makeCacheKey(activeForm);
     if (!forceRefresh) {
       const cached = getCachedResult(key);
       if (cached) {
         setResult(cached);
+        setLiveSnapshot(cached.estimates);
+        setLiveSnapshotBasis({
+          adults: cached.form.adults,
+          kids: cached.form.kids,
+          days: cached.days,
+          nights: cached.nights,
+        });
+        setLastLiveSignature(getLiveSignature(activeForm));
+        setHasManualCalculation(true);
         setLoading(false);
         setStatus('Loaded cached pricing (up to 30 minutes old).');
         return;
@@ -121,6 +191,15 @@ export default function App() {
       const calculated = await calculateTripBudget(activeForm);
       setResult(calculated);
       setCachedResult(key, calculated);
+      setLiveSnapshot(calculated.estimates);
+      setLiveSnapshotBasis({
+        adults: calculated.form.adults,
+        kids: calculated.form.kids,
+        days: calculated.days,
+        nights: calculated.nights,
+      });
+      setLastLiveSignature(getLiveSignature(activeForm));
+      setHasManualCalculation(true);
       if (calculated.flightSource.type === 'heuristic' || calculated.lodgingSource.type === 'heuristic') {
         setStatus('Couldn’t fetch live prices right now — using estimates.');
       } else {
@@ -162,6 +241,8 @@ export default function App() {
           canCalculate={canCalculate}
           locationErrors={locationErrors}
           estimatedTotal={result?.breakdown.total ?? null}
+          categoryTotals={categoryTotals}
+          mealsPreferenceEstimate={mealsPreferenceEstimate}
         />
 
         <AdvancedOverrides
@@ -183,7 +264,6 @@ export default function App() {
               onBufferChange={(percent) => {
                 const next = { ...form, bufferPercent: percent };
                 setForm(next);
-                void runCalculation(true, next);
               }}
               onExportCsv={() => exportResultCsv(result)}
               onShareLink={() => {
