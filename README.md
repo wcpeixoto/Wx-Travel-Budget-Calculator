@@ -1,105 +1,96 @@
-# Wx Travel Budget Calculator
+# Gracie Sports Financial Dashboard
 
-A polished, mobile-first travel budgeting web app that estimates all-in trip costs with transparent assumptions, live pricing hooks, and fallback smart estimates.
+Static personal-use CFO-style dashboard built with React + TypeScript + Vite.
 
-## Features
+It reads transaction history directly from a Google Sheets CSV export and computes all KPIs client-side.
 
-- Hero-style planning form with:
-- Origin city + destination city autocomplete
-- Duration modes: exact dates or length (days + editable nights)
-- Adult and kid sliders with traveler validation
-- Optional cost toggles (airport transport, insurance, activities, local transport)
-- Flyhyer-inspired results cards and premium UI style
-- Outputs:
-- Total estimated trip cost
-- Cost per traveler
-- Cost per day
-- Itemized cost breakdown
-- Buffer/contingency slider (0-25%)
-- `Export CSV` and `Share link` (inputs encoded in URL)
-- `Verify prices` links for Google Flights + Booking hotel search
-- Advanced assumptions accordion for overriding pricing knobs
-- Price source panel showing API vs heuristic and timestamps
-- Fast UX:
-- Debounced autocomplete
-- Skeleton loaders
-- In-memory + localStorage cache keyed by trip inputs
-- Manual cached-price refresh action
-- Privacy-friendly price-watch export (copy JSON config; no account/tracking)
+## What this app includes
 
-## Stack
+- Zero backend architecture (no server, DB, or auth)
+- Six-tab dashboard UI:
+- Big Picture (includes Sustainability + Summary)
+- Money Left on the Table
+- Dig Here
+- Trends
+- What-If Scenarios
+- Settings
+- Google Sheets CSV data adapter with fallback URL support
+- Transaction normalization layer (`Txn[]` contract)
+- KPI engine for monthly rollups, deltas, opportunities, and projections
+- GitHub Pages deployment workflow (free)
 
-- React 18
-- TypeScript
-- Vite
+## Data source
+
+Default source URL:
+
+- `https://docs.google.com/spreadsheets/d/1phtPFxS7wq5tnesxp_XPWZ4rWVCJs0MRqf-qZKdWcOo/export?format=csv&gid=0`
+
+Fallback URL:
+
+- `https://docs.google.com/spreadsheets/d/1phtPFxS7wq5tnesxp_XPWZ4rWVCJs0MRqf-qZKdWcOo/gviz/tq?tqx=out:csv&gid=0`
+
+Expected columns:
+
+- `Date`
+- `Account`
+- `Payee`
+- `Category`
+- `Transfer`
+- `Amount`
+- `Memo/Notes`
+- `Tags`
 
 ## Run locally
 
-1. Install dependencies:
-
 ```bash
 npm install
-```
-
-2. Create env file:
-
-```bash
-cp .env.example .env
-```
-
-3. Start dev server:
-
-```bash
 npm run dev
 ```
 
-4. Build production bundle:
+Production build:
 
 ```bash
 npm run build
 ```
 
-## APIs used
+## Deployment (GitHub Pages)
 
-### Flights (live pricing)
-- Primary integration path: **Amadeus Flight Offers API**
-- Optional recommended production path: call via your own backend proxy (`VITE_TRAVEL_PROXY_BASE_URL`) to keep secrets off the client.
+Workflow file:
 
-### Lodging (live pricing)
-- Primary integration path: **Amadeus Hotel Offers API**
-- Optional recommended production path: same backend proxy pattern.
+- `.github/workflows/deploy-pages.yml`
 
-### Fallback when live pricing fails
-- Uses a transparent **Smart Estimate** model based on destination tier (budget/mid/premium), traveler mix, trip length, and seasonality hints.
-- Source panel always labels values as `API` or `HEURISTIC`.
+How to enable:
 
-## Environment variables
+1. Push this repo to GitHub.
+2. In GitHub, open `Settings` -> `Pages`.
+3. Under Build and deployment, select `GitHub Actions`.
+4. Push to `main` (or run workflow manually).
 
-- `VITE_AMADEUS_CLIENT_ID`: Amadeus self-service client ID.
-- `VITE_AMADEUS_CLIENT_SECRET`: Amadeus self-service client secret.
-- `VITE_TRAVEL_PROXY_BASE_URL`: optional proxy base URL for secure server-side API calls.
+The workflow builds `dist/` and deploys it to GitHub Pages.
 
-## Data model highlights
+## Project structure
 
-- Separate adult vs kid pricing treatment for flights/meals/activities.
-- Exact dates mode derives nights from date difference.
-- Length mode defaults nights to `days - 1` (editable).
-- Includes often-missed categories:
-- Home-airport transit + toll/tip style allowance
-- Baggage fees
-- Local transport
-- Airport food on travel days
-- Misc fees/service charges
-- Insurance and contingency buffer
+```text
+src/
+  config.ts
+  lib/
+    data/
+      contract.ts
+      fetchCsv.ts
+      normalize.ts
+    kpis/
+      compute.ts
+  components/
+    KpiCards.tsx
+    TrendLineChart.tsx
+    ExpenseDonut.tsx
+    TopPayeesTable.tsx
+    MoversList.tsx
+  pages/
+    Dashboard.tsx
+```
 
-## ToS and compliance notes
+## Notes
 
-- This app does **not** scrape Google Flights or Booking pages.
-- Live pricing is sourced from API integrations (Amadeus or user-provided proxy integrations).
-- Google Flights and Booking URLs are provided as user-facing verification links only.
-
-## Suggested production hardening
-
-- Move all third-party API calls to a server/API route.
-- Add per-provider rate limiting and retry/backoff.
-- Add observability for pricing failures and fallback rates.
+- CSV logic is isolated behind a data adapter, so replacing Google Sheets later is straightforward.
+- Settings tab lets you change the CSV URL without changing code.
