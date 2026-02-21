@@ -55,7 +55,11 @@ function formatTimestamp(iso: string | null): string {
 
 function getStoredCsvUrl(): string {
   if (typeof window === 'undefined') return SHEET_CSV_URL;
-  return window.localStorage.getItem(STORAGE_KEYS.csvUrl) ?? SHEET_CSV_URL;
+  try {
+    return window.localStorage.getItem(STORAGE_KEYS.csvUrl) ?? SHEET_CSV_URL;
+  } catch {
+    return SHEET_CSV_URL;
+  }
 }
 
 export default function Dashboard() {
@@ -144,9 +148,14 @@ export default function Dashboard() {
   const rightPanelActions = model.digHerePreview.slice(0, 4);
 
   function handleSaveCsvUrl() {
-    setCsvUrl(draftCsvUrl.trim());
+    const nextUrl = draftCsvUrl.trim();
+    setCsvUrl(nextUrl);
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEYS.csvUrl, draftCsvUrl.trim());
+      try {
+        window.localStorage.setItem(STORAGE_KEYS.csvUrl, nextUrl);
+      } catch {
+        // Ignore storage failures and continue with in-memory URL.
+      }
     }
   }
 
@@ -154,7 +163,11 @@ export default function Dashboard() {
     setDraftCsvUrl(SHEET_CSV_URL);
     setCsvUrl(SHEET_CSV_URL);
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEYS.csvUrl, SHEET_CSV_URL);
+      try {
+        window.localStorage.setItem(STORAGE_KEYS.csvUrl, SHEET_CSV_URL);
+      } catch {
+        // Ignore storage failures and continue with in-memory URL.
+      }
     }
   }
 
