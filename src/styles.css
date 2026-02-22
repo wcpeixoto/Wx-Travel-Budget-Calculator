@@ -839,7 +839,7 @@ input[type='range'] {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 5ch;
+  gap: 2ch;
   flex-wrap: wrap;
   width: fit-content;
   max-width: 100%;
