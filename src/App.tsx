@@ -15,7 +15,6 @@ import {
 import type { CalculationResult, LiveEstimateBasis, LiveEstimateSnapshot, MealsPreferenceEstimate, TripFormState } from './types';
 import { getCachedResult, makeCacheKey, setCachedResult } from './utils/cache';
 import { DEFAULT_FORM_STATE } from './utils/constants';
-import { exportResultCsv } from './utils/csv';
 import { daysBetween } from './utils/date';
 import { copyShareLink, decodeFormFromUrl } from './utils/share';
 
@@ -265,7 +264,7 @@ export default function App() {
                 const next = { ...form, bufferPercent: percent };
                 setForm(next);
               }}
-              onExportCsv={() => exportResultCsv(result)}
+              onPrint={() => window.print()}
               onShareLink={() => {
                 copyShareLink(form)
                   .then(() => setStatus('Share link copied to clipboard.'))

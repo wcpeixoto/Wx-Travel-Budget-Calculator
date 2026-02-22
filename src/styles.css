@@ -836,8 +836,11 @@ input[type='range'] {
 
 .resolved-hint {
   margin-top: 0.1rem;
-  display: grid;
-  gap: 0.1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .autocomplete-debug {
@@ -848,6 +851,11 @@ input[type='range'] {
 .resolved-hint small {
   color: #2b556f;
   font-size: 0.77rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
 }
 
 .link-btn {
@@ -867,6 +875,12 @@ input[type='range'] {
   align-items: baseline;
   gap: 1rem;
   flex-wrap: wrap;
+}
+
+.results-summary {
+  position: relative;
+  z-index: 30;
+  overflow: visible;
 }
 
 .section-head h2 {
@@ -917,12 +931,91 @@ input[type='range'] {
   color: var(--text);
   padding: 0.5rem 0.7rem;
   border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
 }
 
-.verify-links {
+.actions-wrap button:hover {
+  border-color: #a2bcc8;
+  box-shadow: 0 4px 10px rgba(20, 53, 73, 0.07);
+  background: #fdfefe;
+}
+
+.explore-prices {
   margin-top: 0.75rem;
   display: grid;
+  gap: 0.4rem;
+}
+
+.explore-prices-label {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #5a7386;
+  font-weight: 600;
+}
+
+.explore-prices-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.explore-btn {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  border-radius: 10px;
+  min-height: 34px;
+  padding: 0.42rem 0.72rem;
+  font-size: 0.86rem;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.explore-btn:hover {
+  border-color: #a2bcc8;
+  box-shadow: 0 4px 10px rgba(20, 53, 73, 0.07);
+  background: #fdfefe;
+}
+
+.stays-menu {
+  position: relative;
+  z-index: 60;
+}
+
+.explore-btn.is-open {
+  border-color: #9eb7c5;
+  background: #f8fcfe;
+}
+
+.stays-menu-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 160px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 16px 34px rgba(11, 31, 49, 0.14);
+  padding: 0.3rem;
+  display: grid;
   gap: 0.35rem;
+  z-index: 50;
+}
+
+.stays-menu-list a {
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+  padding: 0.38rem 0.46rem;
+  font-size: 0.84rem;
+}
+
+.stays-menu-list a:hover {
+  background: #f0f7fa;
 }
 
 .results-trust-line,
@@ -930,6 +1023,26 @@ input[type='range'] {
   margin: 0.5rem 0 0;
   font-size: 0.84rem;
   color: #567083;
+}
+
+.results-footnotes {
+  margin-top: 0.6rem;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.results-footnotes .results-fallback-note,
+.results-footnotes .results-updated-footnote {
+  margin: 0;
+  font-size: 0.84rem;
+  color: #567083;
+}
+
+.results-footnotes .results-updated-footnote {
+  margin-left: auto;
+  text-align: right;
 }
 
 .table-wrap {
@@ -1135,6 +1248,19 @@ td:last-child {
   }
 }
 
+@media (max-width: 719px) {
+  .results-footnotes {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .results-footnotes .results-updated-footnote {
+    margin-left: 0;
+    text-align: left;
+  }
+}
+
 @media (min-width: 1040px) {
   .cost-tiles {
     grid-template-columns: 1fr 1fr 1fr;
@@ -1166,5 +1292,72 @@ td:last-child {
     width: 100%;
     max-width: none;
     min-width: 0;
+  }
+}
+
+@media print {
+  @page {
+    size: Letter;
+    margin: 0.45in;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .bg-orb,
+  .hero .hero-grid,
+  .advanced-accordion,
+  .status-pill,
+  .actions-wrap,
+  .explore-prices,
+  .sources-grid {
+    display: none !important;
+  }
+
+  .page-shell {
+    padding: 0;
+  }
+
+  .container {
+    max-width: none;
+    gap: 0.3rem;
+  }
+
+  .card {
+    box-shadow: none;
+    border: 1px solid #d9e3eb;
+    padding: 0.55rem;
+    border-radius: 10px;
+    break-inside: avoid;
+  }
+
+  h1 {
+    font-size: 20pt;
+    margin: 0 0 0.15rem;
+  }
+
+  h2 {
+    font-size: 15pt;
+    margin: 0;
+  }
+
+  .summary-cards {
+    margin-top: 0.45rem;
+    gap: 0.35rem;
+  }
+
+  .summary-cards article {
+    padding: 0.45rem;
+    border-radius: 10px;
+  }
+
+  table {
+    margin-top: 0.35rem;
+  }
+
+  th,
+  td {
+    padding: 0.33rem 0;
   }
 }

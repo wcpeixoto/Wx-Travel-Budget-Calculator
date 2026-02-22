@@ -173,12 +173,14 @@ export default function CityAutocomplete({ label, value, onChange, showAirportHe
   }
 
   const helperAirportCode = value.resolved?.primaryIata;
-  const helperAirportName = helperAirportCode ? getAirportDisplayName(helperAirportCode) : '';
+  const helperAirportName = helperAirportCode
+    ? getAirportDisplayName(helperAirportCode).replace(/\s+Airport\b/gi, '').trim()
+    : '';
   const helperText =
     value.resolved?.type === 'city' && helperAirportCode
-      ? `Using ${helperAirportName} (${helperAirportCode})`
+      ? `${helperAirportName} (${helperAirportCode})`
       : value.resolved?.type === 'airport' && helperAirportCode
-        ? `Using ${helperAirportName} (${helperAirportCode})`
+        ? `${helperAirportName} (${helperAirportCode})`
         : '';
 
   return (
