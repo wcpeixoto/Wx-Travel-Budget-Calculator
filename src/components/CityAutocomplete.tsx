@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   getAirportDisplayName,
   getGeocodeSuggestions,
@@ -20,6 +20,8 @@ type Props = {
 const MAX_SUGGESTIONS = 6;
 
 export default function CityAutocomplete({ label, value, onChange, showAirportHelper = true, errorText = '' }: Props) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const instanceIdRef = useRef(`ac-${Math.random().toString(36).slice(2)}`);
   const [query, setQuery] = useState(value.displayText);
   const [open, setOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
@@ -81,6 +83,54 @@ export default function CityAutocomplete({ label, value, onChange, showAirportHe
     setHighlightedIndex(grouped.flat.length > 0 ? 0 : -1);
   }, [grouped.flat.length]);
 
+  useEffect(() => {
+    function handleOtherAutocompleteOpened(event: Event) {
+      const custom = event as CustomEvent<{ id?: string }>;
+      if (custom.detail?.id !== instanceIdRef.current) {
+        setOpen(false);
+      }
+    }
+
+    window.addEventListener('wx-autocomplete-open', handleOtherAutocompleteOpened as EventListener);
+    return () => {
+      window.removeEventListener('wx-autocomplete-open', handleOtherAutocompleteOpened as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handleOutsideEvent(event: Event) {
+      if (!rootRef.current) return;
+      if (!rootRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    window.addEventListener('pointerdown', handleOutsideEvent, true);
+    window.addEventListener('mousedown', handleOutsideEvent, true);
+    window.addEventListener('click', handleOutsideEvent, true);
+    window.addEventListener('touchstart', handleOutsideEvent, true);
+
+    return () => {
+      window.removeEventListener('pointerdown', handleOutsideEvent, true);
+      window.removeEventListener('mousedown', handleOutsideEvent, true);
+      window.removeEventListener('click', handleOutsideEvent, true);
+      window.removeEventListener('touchstart', handleOutsideEvent, true);
+    };
+  }, [open]);
+
+  function setMenuOpen(next: boolean) {
+    if (next) {
+      window.dispatchEvent(
+        new CustomEvent('wx-autocomplete-open', {
+          detail: { id: instanceIdRef.current },
+        }),
+      );
+    }
+    setOpen(next);
+  }
+
   function applySuggestion(suggestion: AutocompleteSuggestion) {
     const next: LocationInputState = {
       displayText: suggestion.primaryLabel,
@@ -88,7 +138,7 @@ export default function CityAutocomplete({ label, value, onChange, showAirportHe
     };
     onChange(next);
     setQuery(next.displayText);
-    setOpen(false);
+    setMenuOpen(false);
   }
 
   function suggestionsSection(title: string, items: AutocompleteSuggestion[]) {
@@ -132,17 +182,17 @@ export default function CityAutocomplete({ label, value, onChange, showAirportHe
         : '';
 
   return (
-    <label className="field">
+    <div className="field" ref={rootRef}>
       <span>{label}</span>
       <input
         type="text"
         value={query}
-        onFocus={() => setOpen(true)}
-        onBlur={() => window.setTimeout(() => setOpen(false), 180)}
+        onFocus={() => setMenuOpen(true)}
+        onBlur={() => setMenuOpen(false)}
         onChange={(e) => {
           const nextText = e.target.value;
           setQuery(nextText);
-          setOpen(nextText.trim().length >= minChars);
+          setMenuOpen(nextText.trim().length >= minChars);
           onChange({
             displayText: nextText,
             resolved: null,
@@ -150,7 +200,7 @@ export default function CityAutocomplete({ label, value, onChange, showAirportHe
         }}
         onKeyDown={(e) => {
           if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-            setOpen(true);
+            setMenuOpen(true);
             return;
           }
 
@@ -171,7 +221,7 @@ export default function CityAutocomplete({ label, value, onChange, showAirportHe
           }
 
           if (e.key === 'Escape') {
-            setOpen(false);
+            setMenuOpen(false);
           }
         }}
         placeholder="Search city or airport"
@@ -187,7 +237,7 @@ export default function CityAutocomplete({ label, value, onChange, showAirportHe
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               setQuery(value.resolved?.cityName ?? query);
-              setOpen(true);
+              setMenuOpen(true);
             }}
           >
             Change airport
@@ -204,6 +254,6 @@ export default function CityAutocomplete({ label, value, onChange, showAirportHe
           {suggestionsSection('Airports', grouped.airports)}
         </div>
       )}
-    </label>
+    </div>
   );
 }
