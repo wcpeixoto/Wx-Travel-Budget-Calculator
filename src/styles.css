@@ -836,11 +836,14 @@ input[type='range'] {
 
 .resolved-hint {
   margin-top: 0.1rem;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 0.9rem;
-  flex-wrap: nowrap;
-  min-width: 0;
+  justify-content: flex-start;
+  gap: 5ch;
+  flex-wrap: wrap;
+  width: fit-content;
+  max-width: 100%;
+  justify-self: start;
 }
 
 .autocomplete-debug {
@@ -851,11 +854,6 @@ input[type='range'] {
 .resolved-hint small {
   color: #2b556f;
   font-size: 0.77rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-  flex: 1;
 }
 
 .link-btn {
