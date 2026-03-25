@@ -590,7 +590,7 @@ export function estimateIncludeCategoryTotals(form: TripFormState): IncludeCateg
   const miscFees = manual.miscFeesTotalOverride ?? (manual.miscFeesFlat + nights * 12);
 
   const petBoardingAuto = form.includeCosts.petBoarding
-    ? manual.petBoardingTotalOverride ?? days * manual.petBoardingPerDay
+    ? manual.petBoardingTotalOverride !== null ? nights * manual.petBoardingTotalOverride : days * manual.petBoardingPerDay
     : 0;
 
   const categoryTotals: IncludeCategoryTotals = {
@@ -704,7 +704,7 @@ function buildBudgetFromEstimates(
   const insuranceAuto = form.includeCosts.travelInsurance ? subtotalNoInsurance * (form.overrides.insurancePercent / 100) : 0;
   const insurance = manual.insuranceTotalOverride ?? insuranceAuto;
   const petBoardingAuto = form.includeCosts.petBoarding ? days * form.overrides.petBoardingPerDay : 0;
-  const petBoarding = manual.petBoardingTotalOverride ?? petBoardingAuto;
+  const petBoarding = manual.petBoardingTotalOverride !== null ? nights * manual.petBoardingTotalOverride : petBoardingAuto;
   const subtotal = subtotalNoInsurance + insurance + petBoarding;
   const buffer = subtotal * (form.bufferPercent / 100);
   const total = subtotal + buffer;
