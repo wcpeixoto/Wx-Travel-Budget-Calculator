@@ -67,8 +67,8 @@ export default function HeroForm({
     { key: 'activities', label: 'Activities', icon: TicketIcon },
     { key: 'baggageFees', label: 'Baggage fees', icon: LuggageIcon },
     { key: 'airportAccess', label: 'Airport ride / parking', icon: PlaneTakeoffIcon },
-    { key: 'travelInsurance', label: 'Travel insurance', icon: ShieldCheckIcon },
     { key: 'petBoarding', label: 'Pet boarding', icon: PawPrintIcon },
+    { key: 'travelInsurance', label: 'Travel insurance', icon: ShieldCheckIcon },
   ];
 
   useEffect(() => {

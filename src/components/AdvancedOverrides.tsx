@@ -41,6 +41,7 @@ const MANUAL_TOTAL_FIELDS: Field[] = [
   { key: 'activitiesTotalOverride', label: 'Activities total override (USD)', optional: true },
   { key: 'miscFeesTotalOverride', label: 'Misc fees total override (USD)', optional: true },
   { key: 'insuranceTotalOverride', label: 'Insurance total override (USD)', optional: true },
+  { key: 'petBoardingTotalOverride', label: 'Pet boarding total override (USD)', optional: true },
 ];
 
 function toInputValue(value: number | null): string | number {
