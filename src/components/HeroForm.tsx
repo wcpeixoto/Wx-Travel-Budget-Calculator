@@ -10,6 +10,7 @@ import {
   BedDoubleIcon,
   CarIcon,
   LuggageIcon,
+  PawPrintIcon,
   PlaneTakeoffIcon,
   ShieldCheckIcon,
   TicketIcon,
@@ -67,6 +68,7 @@ export default function HeroForm({
     { key: 'baggageFees', label: 'Baggage fees', icon: LuggageIcon },
     { key: 'airportAccess', label: 'Airport ride / parking', icon: PlaneTakeoffIcon },
     { key: 'travelInsurance', label: 'Travel insurance', icon: ShieldCheckIcon },
+    { key: 'petBoarding', label: 'Pet boarding', icon: PawPrintIcon },
   ];
 
   useEffect(() => {

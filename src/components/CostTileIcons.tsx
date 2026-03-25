@@ -94,3 +94,15 @@ export function ShieldCheckIcon(props: IconProps) {
     </IconBase>
   );
 }
+
+export function PawPrintIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <circle cx="11" cy="4" r="2" />
+      <circle cx="18" cy="8" r="2" />
+      <circle cx="6" cy="8" r="2" />
+      <path d="M14.5 17c0 2.5-2.5 4-4.5 4s-4.5-1.5-4.5-4c0-3 2.5-5 4.5-5s4.5 2 4.5 5z" />
+      <circle cx="17" cy="15" r="2" />
+    </IconBase>
+  );
+}

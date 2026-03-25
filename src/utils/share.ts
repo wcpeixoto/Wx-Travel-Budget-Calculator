@@ -74,6 +74,7 @@ function normalizeIncludeCosts(input: unknown): TripFormState['includeCosts'] {
     meals: candidate.meals ?? defaults.meals,
     activities: candidate.activities ?? defaults.activities,
     travelInsurance: candidate.travelInsurance ?? defaults.travelInsurance,
+    petBoarding: candidate.petBoarding ?? defaults.petBoarding,
   };
 }
 
@@ -146,6 +147,7 @@ export function decodeFormFromUrl(): TripFormState | null {
             meals: DEFAULT_FORM_STATE.includeCosts.meals,
             activities: parsed.includeActivities ?? DEFAULT_FORM_STATE.includeCosts.activities,
             travelInsurance: parsed.includeInsurance ?? DEFAULT_FORM_STATE.includeCosts.travelInsurance,
+            petBoarding: DEFAULT_FORM_STATE.includeCosts.petBoarding,
           };
 
     return {

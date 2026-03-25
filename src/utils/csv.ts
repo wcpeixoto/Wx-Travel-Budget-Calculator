@@ -24,6 +24,7 @@ export function exportResultCsv(result: CalculationResult) {
     ['Activities', result.breakdown.activities.toFixed(2)],
     ['Misc Fees', result.breakdown.miscFees.toFixed(2)],
     ['Insurance', result.breakdown.insurance.toFixed(2)],
+    ['Pet Boarding', result.breakdown.petBoarding.toFixed(2)],
     ['Buffer', result.breakdown.buffer.toFixed(2)],
     ['Google Flights Link', result.googleFlightsUrl],
     ['Hotels Link', result.hotelsUrl],

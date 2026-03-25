@@ -27,6 +27,7 @@ export type IncludeCosts = {
   meals: boolean;
   activities: boolean;
   travelInsurance: boolean;
+  petBoarding: boolean;
 };
 
 export type IncludeCategoryTotals = Record<keyof IncludeCosts, number | null>;
@@ -75,6 +76,8 @@ export type AdvancedOverrides = {
   activitiesTotalOverride: number | null;
   miscFeesTotalOverride: number | null;
   insuranceTotalOverride: number | null;
+  petBoardingPerDay: number;
+  petBoardingTotalOverride: number | null;
   roadTripDistanceMiles: number | null;
   roadTripMpg: number;
   roadTripGasPricePerGallon: number;
@@ -100,6 +103,7 @@ export type CostBreakdown = {
   activities: number;
   miscFees: number;
   insurance: number;
+  petBoarding: number;
   subtotal: number;
   buffer: number;
   total: number;
